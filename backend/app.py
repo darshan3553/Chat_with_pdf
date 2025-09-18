@@ -9,9 +9,19 @@ from flask_cors import CORS
 
 TOGETHER_API_KEY = os.environ.get("TOGETHER_API_KEY")
 
-app = Flask(__name__)
 # Allow your Vercel frontend explicitly
-CORS(app, resources={r"/*": {"origins": "*"}})
+app = Flask(__name__)
+
+# Allow your Vercel frontend explicitly
+CORS(app, resources={r"/*": {"origins": "https://chat-with-pdf-mu.vercel.app"}})
+
+# Ensure every response has proper headers
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "https://chat-with-pdf-mu.vercel.app"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    return response
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
