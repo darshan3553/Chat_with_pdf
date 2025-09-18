@@ -165,37 +165,42 @@ function FileUpload({ onFileUploaded, setIsUploading, isUploading }) {
   };
 
   const handleUpload = async () => {
-    if (!file) {
-      setMessage("Please select a PDF first!");
-      return;
-    }
-    setIsUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
+  if (!file) {
+    setMessage("Please select a PDF first!");
+    return;
+  }
+  setIsUploading(true);
+  const formData = new FormData();
+  formData.append("file", file);
 
-    try {
-      const res = await axios.post("https://chat-with-pdf-yy6t.onrender.com/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+  try {
+    const res = await axios.post(
+      "https://chat-with-pdf-yy6t.onrender.com/upload",
+      formData,
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+        withCredentials: false, // ✅ prevent CORS cookie issues
+      }
+    );
 
-      const info = {
-        filename: res.data.filename,
-        pages: res.data.num_pages,
-        chunks: res.data.chunks,
-      };
+    const info = {
+      filename: res.data.filename,
+      pages: res.data.num_pages,
+      chunks: res.data.chunks,
+    };
 
-      setMessage(`✅ Uploaded: ${info.filename}`);
-      onFileUploaded(info);
-    } catch (err) {
-      console.error("Upload error:", err.response ? err.response.data : err.message);
-      setMessage(
-        "❌ Upload failed: " + (err.response?.data?.error || err.message)
-      );
-    } finally {
-      setIsUploading(false);
-      setFile(null); // Clear the file input
-    }
-  };
+    setMessage(`✅ Uploaded: ${info.filename}`);
+    onFileUploaded(info);
+  } catch (err) {
+    console.error("Upload error:", err.response ? err.response.data : err.message);
+    setMessage("❌ Upload failed: " + (err.response?.data?.error || err.message));
+  } finally {
+    setIsUploading(false);
+    setFile(null);
+    document.querySelector('input[type="file"]').value = ""; // ✅ reset input
+  }
+};
+
 
   return (
     <div className="p-4 border border-gray-200 rounded-2xl bg-white shadow-sm">
