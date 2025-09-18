@@ -10,33 +10,25 @@ from flask_cors import CORS
 # ✅ Use environment variable for sensitive data like API keys
 TOGETHER_API_KEY = os.environ.get("TOGETHER_API_KEY")
 
-# Create Flask app and enable CORS for local development
+# Create Flask app and enable CORS
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Limit file uploads to 50MB
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
-# Define upload folder and create it if it doesn't exist
+# Define upload folder
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Global storage for the PDF chunks and the FAISS index
+# Global state
 pdf_chunks = []
 pdf_index = None
-
-# Initialize the Sentence Transformer model for creating embeddings
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
-
-# Initialize the TogetherAI client using the environment variable
-if TOGETHER_API_KEY:
-    client = Together(api_key=TOGETHER_API_KEY)
-else:
-    client = None
-    print("⚠️ Warning: TOGETHER_API_KEY environment variable not set. API calls will fail.")
+embedder = None  # Lazy loaded
+client = Together(api_key=TOGETHER_API_KEY) if TOGETHER_API_KEY else None
 
 
-# 🔹 Helper function to split text into manageable chunks
+# 🔹 Helper: Chunk text
 def chunk_text(text, chunk_size=500, overlap=50):
     words = text.split()
     chunks, start = [], 0
@@ -44,17 +36,20 @@ def chunk_text(text, chunk_size=500, overlap=50):
         end = min(start + chunk_size, len(words))
         chunk = " ".join(words[start:end])
         chunks.append(chunk)
-        # Move the start position back to create overlap
         start += chunk_size - overlap
     return chunks
 
 
+@app.route("/")
+def health():
+    return jsonify({"status": "running"}), 200
+
+
 @app.route("/upload", methods=["POST"])
 def upload_file():
-    """Handles the PDF file upload, text extraction, and indexing."""
-    global pdf_chunks, pdf_index
+    """Handles PDF upload, text extraction, and indexing."""
+    global pdf_chunks, pdf_index, embedder
 
-    # Check if a file was included in the request
     if "file" not in request.files:
         return jsonify({"error": "No file part"}), 400
 
@@ -66,26 +61,26 @@ def upload_file():
     file_path = os.path.join(UPLOAD_FOLDER, file.filename)
     file.save(file_path)
 
-    # ✅ Extract text from the PDF
+    # ✅ Extract text
     try:
         pdf_reader = PyPDF2.PdfReader(file_path)
-        text = ""
-        for page in pdf_reader.pages:
-            if page.extract_text():
-                text += page.extract_text() + "\n"
+        text = "\n".join(page.extract_text() or "" for page in pdf_reader.pages)
     except Exception as e:
         return jsonify({"error": f"Failed to read PDF file: {e}"}), 500
 
     if not text.strip():
         return jsonify({"error": "The PDF file appears to be empty or unscannable."}), 400
 
-    # 🔹 Chunk the extracted text
+    # 🔹 Chunk the text
     pdf_chunks = chunk_text(text)
 
-    # Convert chunks to embeddings
+    # 🔹 Lazy load embedder
+    if embedder is None:
+        embedder = SentenceTransformer("all-MiniLM-L6-v2")
+
     embeddings = embedder.encode(pdf_chunks, convert_to_numpy=True)
 
-    # 🔹 Store embeddings in FAISS index
+    # 🔹 Create FAISS index
     dim = embeddings.shape[1]
     pdf_index = faiss.IndexFlatL2(dim)
     pdf_index.add(embeddings)
@@ -100,13 +95,12 @@ def upload_file():
 
 @app.route("/ask", methods=["POST"])
 def ask_question():
-    """Handles the user's question, retrieves relevant context, and gets an answer from Together AI."""
-    global pdf_chunks, pdf_index
+    """Answers user questions using retrieved context + Together AI."""
+    global pdf_chunks, pdf_index, embedder, client
 
     data = request.get_json()
     question = data.get("question", "")
 
-    # Validate
     if not question.strip():
         return jsonify({"answer": "Please ask a valid question."}), 400
     if pdf_index is None:
@@ -117,7 +111,7 @@ def ask_question():
     # 🔹 Embed the question
     q_embedding = embedder.encode([question], convert_to_numpy=True)
 
-    # 🔹 Search FAISS index for top 'k' chunks
+    # 🔹 Search FAISS
     k = 3
     D, I = pdf_index.search(q_embedding, k)
     retrieved_chunks = [pdf_chunks[i] for i in I[0]]
@@ -127,14 +121,12 @@ def ask_question():
     prompt = f"""
     You are a helpful assistant. 
     Answer the question based only on the following PDF content. 
-    Do not use any external knowledge. 
-    If the answer is not in the document, state that you cannot find the information.
+    If the answer is not in the document, say so.
 
     PDF Content: {context}
     Question: {question}
     """
 
-    # 🔹 Call TogetherAI API
     try:
         response = client.chat.completions.create(
             model="meta-llama/Llama-3-70b-chat-hf",
@@ -142,7 +134,7 @@ def ask_question():
         )
         answer = response.choices[0].message.content
     except Exception as e:
-        return jsonify({"answer": f"An error occurred with the LLM API: {e}"}), 500
+        return jsonify({"answer": f"Error with LLM API: {e}"}), 500
 
     return jsonify({"answer": answer})
 
