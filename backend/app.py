@@ -11,7 +11,7 @@ TOGETHER_API_KEY = os.environ.get("TOGETHER_API_KEY")
 
 app = Flask(__name__)
 # Allow your Vercel frontend explicitly
-CORS(app, resources={r"/*": {"origins": ["https://chat-with-pdf-mu.vercel.app"]}})
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
