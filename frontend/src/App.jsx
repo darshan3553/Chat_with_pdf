@@ -174,7 +174,7 @@ function FileUpload({ onFileUploaded, setIsUploading, isUploading }) {
     formData.append("file", file);
 
     try {
-      const res = await axios.post("http://localhost:5000/upload", formData, {
+      const res = await axios.post("https://chat-with-pdf-yy6t.onrender.com/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
@@ -237,7 +237,7 @@ function SearchBar({ onSearch, isLoading, setIsLoading }) {
     setIsLoading(true);
 
     try {
-      const res = await axios.post("http://localhost:5000/ask", { question });
+      const res = await axios.post("https://chat-with-pdf-yy6t.onrender.com/ask", { question });
       onSearch({ sender: "ai", text: res.data.answer });
     } catch (err) {
       console.error("Search error:", err.response ? err.response.data : err.message);
