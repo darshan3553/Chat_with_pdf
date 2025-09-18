@@ -7,28 +7,21 @@ from sentence_transformers import SentenceTransformer
 from together import Together
 from flask_cors import CORS
 
-# ✅ Use environment variable for sensitive data like API keys
 TOGETHER_API_KEY = os.environ.get("TOGETHER_API_KEY")
 
-# Create Flask app and enable CORS
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+# Allow your Vercel frontend explicitly
+CORS(app, resources={r"/*": {"origins": ["https://chat-with-pdf-mu.vercel.app"]}})
 
-# Limit file uploads to 50MB
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
-
-# Define upload folder
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Global state
 pdf_chunks = []
 pdf_index = None
-embedder = None  # Lazy loaded
+embedder = None
 client = Together(api_key=TOGETHER_API_KEY) if TOGETHER_API_KEY else None
 
 
-# 🔹 Helper: Chunk text
 def chunk_text(text, chunk_size=500, overlap=50):
     words = text.split()
     chunks, start = [], 0
@@ -47,7 +40,6 @@ def health():
 
 @app.route("/upload", methods=["POST"])
 def upload_file():
-    """Handles PDF upload, text extraction, and indexing."""
     global pdf_chunks, pdf_index, embedder
 
     if "file" not in request.files:
@@ -57,11 +49,9 @@ def upload_file():
     if file.filename == "":
         return jsonify({"error": "No selected file"}), 400
 
-    # Save uploaded file
     file_path = os.path.join(UPLOAD_FOLDER, file.filename)
     file.save(file_path)
 
-    # ✅ Extract text
     try:
         pdf_reader = PyPDF2.PdfReader(file_path)
         text = "\n".join(page.extract_text() or "" for page in pdf_reader.pages)
@@ -69,18 +59,15 @@ def upload_file():
         return jsonify({"error": f"Failed to read PDF file: {e}"}), 500
 
     if not text.strip():
-        return jsonify({"error": "The PDF file appears to be empty or unscannable."}), 400
+        return jsonify({"error": "The PDF file appears empty or unscannable."}), 400
 
-    # 🔹 Chunk the text
     pdf_chunks = chunk_text(text)
 
-    # 🔹 Lazy load embedder
     if embedder is None:
         embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
     embeddings = embedder.encode(pdf_chunks, convert_to_numpy=True)
 
-    # 🔹 Create FAISS index
     dim = embeddings.shape[1]
     pdf_index = faiss.IndexFlatL2(dim)
     pdf_index.add(embeddings)
@@ -95,7 +82,6 @@ def upload_file():
 
 @app.route("/ask", methods=["POST"])
 def ask_question():
-    """Answers user questions using retrieved context + Together AI."""
     global pdf_chunks, pdf_index, embedder, client
 
     data = request.get_json()
@@ -108,19 +94,16 @@ def ask_question():
     if client is None:
         return jsonify({"answer": "API key not configured. Cannot answer."}), 503
 
-    # 🔹 Embed the question
     q_embedding = embedder.encode([question], convert_to_numpy=True)
 
-    # 🔹 Search FAISS
     k = 3
     D, I = pdf_index.search(q_embedding, k)
     retrieved_chunks = [pdf_chunks[i] for i in I[0]]
 
-    # 🔹 Create prompt
     context = "\n\n".join(retrieved_chunks)
     prompt = f"""
-    You are a helpful assistant. 
-    Answer the question based only on the following PDF content. 
+    You are a helpful assistant.
+    Answer the question based only on the following PDF content.
     If the answer is not in the document, say so.
 
     PDF Content: {context}
