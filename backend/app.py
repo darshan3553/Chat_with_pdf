@@ -7,18 +7,18 @@ from sentence_transformers import SentenceTransformer
 from together import Together
 from flask_cors import CORS
 
+# Load API key from environment
 TOGETHER_API_KEY = os.environ.get("TOGETHER_API_KEY")
 
-# Allow your Vercel frontend explicitly
 app = Flask(__name__)
 
-# Allow your Vercel frontend explicitly
-CORS(app, resources={r"/*": {"origins": "https://chat-with-pdf-mu.vercel.app"}})
+# Allow your deployed Vercel frontend
+CORS(app, resources={r"/*": {"origins": "https://chat-with-pdf-mauve.vercel.app"}})
 
 # Ensure every response has proper headers
 @app.after_request
 def add_cors_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "https://chat-with-pdf-mu.vercel.app"
+    response.headers["Access-Control-Allow-Origin"] = "https://chat-with-pdf-mauve.vercel.app"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
     response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
     return response
@@ -51,7 +51,7 @@ def health():
 @app.route("/upload", methods=["POST"])
 def upload_file():
     global pdf_chunks, pdf_index, embedder
-    
+
     if "file" not in request.files:
         return jsonify({"error": "No file part"}), 400
 
@@ -133,6 +133,5 @@ def ask_question():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=5001)
-
+    port = int(os.environ.get("PORT", 5000))  # dynamic port for deployment
+    app.run(host="0.0.0.0", port=port)
